@@ -1,8 +1,8 @@
 """
-推理演示 —— 俯视城市地图，观察玩具小车自动找到的最优路径。
+推理演示 —— 3D 斜俯视城市，观察玩具小车自动找到的最优路径。
 
-小车从起点沿道路行驶，自动绕开高楼街区到达目标（金色点）。
-左侧俯视城市清晰展示小车走的路径（绿色），右侧显示到目标的距离下降曲线。
+小车从起点沿道路行驶，自动绕开立体高楼街区到达目标（金色点）。
+左侧 3D 斜俯视城市清晰展示小车走的路径（绿色），右侧显示到目标的距离下降曲线。
 
 用法：
     python predict.py                  # 加载 model.pkl 观察城市路径
@@ -18,7 +18,8 @@ import numpy as np
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
-from city_vis import ToyCar2D, draw_buildings, draw_map
+from city_vis import (ToyCar, draw_buildings, draw_ground,
+                      draw_road_lines, set_isometric_view)
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
@@ -39,20 +40,26 @@ def main():
     agent.epsilon = 0.0
     print(f"已加载模型 {args.model}（学习步数 {agent.learn_steps}）")
 
-    # ---------------- 画布（俯视）----------------
+    # ---------------- 画布（3D 斜俯视）----------------
     plt.ion()
-    fig = plt.figure(figsize=(12, 6))
-    ax = fig.add_subplot(121)
+    fig = plt.figure(figsize=(12.5, 6.5))
+    ax = fig.add_subplot(121, projection="3d")
     ax2d = fig.add_subplot(122)
 
-    ax.set_xlabel("X"); ax.set_ylabel("Z")
-    ax.set_title("俯视城市 · 小车自动寻路到目标")
-    draw_map(ax, env.grid, env.spacing)
+    L = (env.grid - 1) * env.spacing
+    ax.set_xlim(0, L); ax.set_ylim(0, L); ax.set_zlim(0, 4)
+    ax.set_xlabel("X"); ax.set_ylabel("Z"); ax.set_zlabel("Y")
+    ax.set_title("3D 斜俯视城市 · 小车自动寻路到目标")
+    draw_ground(ax, env.grid, env.spacing)
+    draw_road_lines(ax, env.grid, env.spacing)
     draw_buildings(ax, env.buildings)
-    goal_pt, = ax.plot([], [], "o", color="gold", ms=12, mec="k",
+    set_isometric_view(ax)
+
+    goal_pt, = ax.plot([], [], [], "o", color="gold", ms=11, mec="k",
                        mew=1.2, zorder=4, label="目标")
-    trail, = ax.plot([], [], "-", color="#2ecc40", lw=2.4, zorder=3, label="小车路径")
-    car = ToyCar2D(ax, 0, 0, 0)
+    trail, = ax.plot([], [], [], "-", color="#2ecc40", lw=2.6,
+                     zorder=3, label="小车路径")
+    car = ToyCar(ax, 0, 0, 0)
     ax.legend(loc="upper left")
 
     ax2d.set_title("每个演示回合 · 小车到目标的距离")
@@ -82,8 +89,10 @@ def main():
             if not args.no_render:
                 gx, gz = env.goal_world()
                 goal_pt.set_data([gx], [gz])
+                goal_pt.set_3d_properties([0.5])
                 tw = np.array(traj_world)
                 trail.set_data(tw[:, 0], tw[:, 1])
+                trail.set_3d_properties(np.full(len(tw), 0.12))
                 if len(tw) >= 2:
                     dx, dz = tw[-1] - tw[-2]
                     car.place(*env.car_world(), np.arctan2(dz, dx))
@@ -99,9 +108,10 @@ def main():
 
     # ---------------- 收尾：画最后一个回合路径 + 距离曲线 ----------------
     gx, gz = env.goal_world()
-    goal_pt.set_data([gx], [gz])
+    goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.5])
     tw = np.array(traj_world)
     trail.set_data(tw[:, 0], tw[:, 1])
+    trail.set_3d_properties(np.full(len(tw), 0.12))
     if len(tw) >= 2:
         dx, dz = tw[-1] - tw[-2]
         car.place(*env.car_world(), np.arctan2(dz, dx))
