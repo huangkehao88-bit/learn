@@ -26,6 +26,17 @@ from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
 
+def _draw_obstacles(ax, env):
+    """在 3D 坐标轴上绘制所有建筑物（半透明棕色球体）。"""
+    u = np.linspace(0, 2 * np.pi, 24)
+    v = np.linspace(0, np.pi, 18)
+    for center, radius in env.obstacles:
+        x = center[0] + radius * np.outer(np.cos(u), np.sin(v))
+        y = center[1] + radius * np.outer(np.sin(u), np.sin(v))
+        z = center[2] + radius * np.outer(np.ones_like(u), np.cos(v))
+        ax.plot_surface(x, y, z, color="#b5651d", alpha=0.45, linewidth=0)
+
+
 def main():
     parser = argparse.ArgumentParser(description="3D 智能小车 DQN 训练可视化")
     parser.add_argument("--episodes", type=int, default=500, help="训练回合数")
@@ -60,6 +71,7 @@ def main():
     trail, = ax3d.plot([], [], [], "b-", alpha=0.6, lw=1.5, label="小车轨迹")
     car_pt, = ax3d.plot([], [], [], "bo", markersize=7, label="小车")
     ax3d.legend(loc="upper left")
+    _draw_obstacles(ax3d, env)   # 画出建筑物障碍
 
     # 右侧学习曲线
     ax2d.set_title("每个回合累计奖励（学习曲线）")

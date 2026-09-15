@@ -25,6 +25,17 @@ from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
 
+def _draw_obstacles(ax, env):
+    """在 3D 坐标轴上绘制所有建筑物（半透明棕色球体）。"""
+    u = np.linspace(0, 2 * np.pi, 24)
+    v = np.linspace(0, np.pi, 18)
+    for center, radius in env.obstacles:
+        x = center[0] + radius * np.outer(np.cos(u), np.sin(v))
+        y = center[1] + radius * np.outer(np.sin(u), np.sin(v))
+        z = center[2] + radius * np.outer(np.ones_like(u), np.cos(v))
+        ax.plot_surface(x, y, z, color="#b5651d", alpha=0.45, linewidth=0)
+
+
 def main():
     parser = argparse.ArgumentParser(description="加载训练好的 3D 小车模型做推理演示")
     parser.add_argument("--model", type=str, default="model.pkl",
@@ -57,6 +68,7 @@ def main():
     trail, = ax3d.plot([], [], [], "b-", alpha=0.6, lw=1.5, label="小车轨迹")
     car_pt, = ax3d.plot([], [], [], "bo", markersize=7, label="小车")
     ax3d.legend(loc="upper left")
+    _draw_obstacles(ax3d, env)   # 画出建筑物障碍
 
     ax2d.set_title("每个演示回合 · 小车到目标的距离")
     ax2d.set_xlabel("步数"); ax2d.set_ylabel("到目标距离")
