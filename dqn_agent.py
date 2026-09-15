@@ -1,12 +1,14 @@
 """
 DQN 智能体 —— 强化学习的"大脑"。
 
-它利用上一节手写的神经网络（Q 网络），教会小车"看到什么状态，走哪个动作"。
+它利用手写的神经网络（Q 网络），教会小车"看到什么状态，走哪个动作"。
 核心组件：
 - ε-greedy 探索：一开始多随机尝试，慢慢转为利用经验
 - 经验回放：把过去的经验存起来随机抽样学习，打破数据相关性
 - 目标网络：提供一个"稳定的标准"来算目标值，让学习更平稳
+- 模型保存/加载：训练成果可复用，不必每次重新训练
 """
+import pickle
 import random
 from collections import deque
 
@@ -88,3 +90,53 @@ class DQNAgent:
         for i in range(len(self.q_net.W)):
             self.target_net.W[i] = self.q_net.W[i].copy()
             self.target_net.b[i] = self.q_net.b[i].copy()
+
+    # ---------------------------------------------------------------
+    # 模型保存 / 加载（权重序列化，训练成果可复用）
+    # ---------------------------------------------------------------
+    def save(self, path: str):
+        """把 Q 网络权重和超参数保存到文件（pickle 序列化）。"""
+        data = {
+            "state_dim": self.state_dim,
+            "n_actions": self.n_actions,
+            "gamma": self.gamma,
+            "epsilon": self.epsilon,
+            "epsilon_min": self.epsilon_min,
+            "epsilon_decay": self.epsilon_decay,
+            "learn_steps": self.learn_steps,
+            "q_W": self.q_net.W,     # 每层权重矩阵
+            "q_b": self.q_net.b,     # 每层偏置向量
+        }
+        with open(path, "wb") as f:
+            pickle.dump(data, f)
+
+    @classmethod
+    def load(cls, path: str, lr: float = 5e-4):
+        """从文件加载模型，返回一个权重已恢复的 DQNAgent。
+
+        加载后保留保存时的超参数；推理时建议把探索率设为 0 做纯利用。
+        """
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+
+        agent = cls(
+            state_dim=data["state_dim"],
+            n_actions=data["n_actions"],
+            lr=lr,
+            gamma=data["gamma"],
+            epsilon=data["epsilon"],
+            epsilon_min=data["epsilon_min"],
+            epsilon_decay=data["epsilon_decay"],
+        )
+        agent.learn_steps = data["learn_steps"]
+
+        # 恢复 Q 网络权重（结构需匹配：层数、每层维度一致）
+        if len(agent.q_net.W) != len(data["q_W"]):
+            raise ValueError("模型结构与当前配置不匹配，无法加载")
+        for i in range(len(agent.q_net.W)):
+            if agent.q_net.W[i].shape != data["q_W"][i].shape:
+                raise ValueError(f"第 {i} 层权重形状不匹配")
+            agent.q_net.W[i] = data["q_W"][i]
+            agent.q_net.b[i] = data["q_b"][i]
+        agent._sync_target()
+        return agent

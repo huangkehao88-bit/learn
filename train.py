@@ -5,10 +5,12 @@
 - 左：3D 场景，蓝色小车实时追踪红色目标（蓝线是它本回合的轨迹）
 - 右：学习曲线，每个回合的累计奖励逐渐爬升
 
+训练结束后会把学到的模型保存下来（--model-out），之后可用 predict.py 直接演示。
+
 用法：
-    python train.py                     # 完整训练 + 实时可视化窗口
-    python train.py --episodes 200      # 只训练 200 回合
-    python train.py --no-render         # 不开窗口，快速训练并保存结果图
+    python train.py                          # 完整训练 + 实时可视化窗口
+    python train.py --episodes 300           # 只训练 300 回合
+    python train.py --no-render              # 不开窗口，快速训练并保存结果图和模型
 """
 import argparse
 
@@ -31,8 +33,10 @@ def main():
                         help="每 N 个回合刷新一次画面（越大越快）")
     parser.add_argument("--save", type=str, default="training_result.png",
                         help="最终结果图保存路径")
+    parser.add_argument("--model-out", type=str, default="model.pkl",
+                        help="训练好的模型保存路径（可被 predict.py 加载）")
     parser.add_argument("--no-render", action="store_true",
-                        help="不打开窗口，只训练并保存结果图")
+                        help="不打开窗口，只训练并保存结果图和模型")
     args = parser.parse_args()
 
     # 不显示窗口时用无界面后端
@@ -139,7 +143,12 @@ def main():
     fig.canvas.draw_idle()
 
     fig.savefig(args.save, dpi=120, bbox_inches="tight")
-    print(f"\n训练完成！共 {args.episodes} 回合，结果图已保存为 {args.save}")
+
+    # 保存训练好的模型，供 predict.py 推理演示
+    agent.save(args.model_out)
+    print(f"\n训练完成！共 {args.episodes} 回合")
+    print(f"结果图已保存为 {args.save}")
+    print(f"模型已保存为 {args.model_out}（可用 python predict.py 演示）")
 
     if args.no_render:
         plt.close(fig)
