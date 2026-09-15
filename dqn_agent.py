@@ -16,11 +16,11 @@ from neural_net import NeuralNet
 
 
 class DQNAgent:
-    def __init__(self, state_dim: int, n_actions: int, lr: float = 1e-3,
-                 gamma: float = 0.99, epsilon: float = 1.0,
-                 epsilon_min: float = 0.05, epsilon_decay: float = 0.995,
+    def __init__(self, state_dim: int, n_actions: int, lr: float = 5e-4,
+                 gamma: float = 0.96, epsilon: float = 1.0,
+                 epsilon_min: float = 0.05, epsilon_decay: float = 0.99,
                  buffer_size: int = 20000, batch_size: int = 32,
-                 target_update_interval: int = 100, seed: int | None = None):
+                 target_update_interval: int = 60, seed: int | None = None):
         self.state_dim = state_dim
         self.n_actions = n_actions
         self.gamma = gamma                      # 折扣因子：未来奖励的打折程度
@@ -65,6 +65,8 @@ class DQNAgent:
             # TD 目标：r + γ·max Q'(s')（终止状态没有未来项）
             q_next = self.target_net.predict(s2)
             target = r if done else r + self.gamma * float(np.max(q_next))
+            # 裁剪目标值，防止 Q 值发散（DQN 稳定的关键技巧）
+            target = float(np.clip(target, -30.0, 30.0))
             # 只让"被选动作"的 Q 值朝目标靠近，其余动作的误差置 0
             q = self.q_net.predict(s)
             d_out = np.zeros_like(q)

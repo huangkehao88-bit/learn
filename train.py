@@ -16,6 +16,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
+# 中文字体（Windows 微软雅黑，避免图上中文显示为方块）
+matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
+matplotlib.rcParams["axes.unicode_minus"] = False
+
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
@@ -86,8 +90,8 @@ def main():
         episode_rewards.append(total_reward)
         avg50 = float(np.mean(episode_rewards[-50:]))
 
-        # ---- 更新可视化（每 render-every 回合刷新一次）----
-        if ep % args.render_every == 0 or ep == 1:
+        # ---- 更新可视化（仅渲染模式：每 render-every 回合刷新一次）----
+        if not args.no_render and (ep % args.render_every == 0 or ep == 1):
             goal_pt.set_data([env.goal[0]], [env.goal[1]])
             goal_pt.set_3d_properties([env.goal[2]])
 
@@ -117,7 +121,23 @@ def main():
                   f"平均损失 {avg_loss:.4f}")
             running_loss, loss_count = 0.0, 0
 
-    # ---------------- 收尾 ----------------
+    # ---------------- 收尾：补画最后一回合 3D + 完整曲线，再保存 ----------------
+    goal_pt.set_data([env.goal[0]], [env.goal[1]])
+    goal_pt.set_3d_properties([env.goal[2]])
+    traj_arr = np.array(traj)
+    trail.set_data(traj_arr[:, 0], traj_arr[:, 1])
+    trail.set_3d_properties(traj_arr[:, 2])
+    car_pt.set_data([env.car_pos[0]], [env.car_pos[1]])
+    car_pt.set_3d_properties([env.car_pos[2]])
+
+    xs = list(range(1, len(episode_rewards) + 1))
+    line_reward.set_data(xs, episode_rewards)
+    if len(episode_rewards) >= 50:
+        line_avg.set_data(xs, [np.mean(episode_rewards[max(0, i - 50):i + 1])
+                               for i in range(len(episode_rewards))])
+    ax2d.relim(); ax2d.autoscale_view()
+    fig.canvas.draw_idle()
+
     fig.savefig(args.save, dpi=120, bbox_inches="tight")
     print(f"\n训练完成！共 {args.episodes} 回合，结果图已保存为 {args.save}")
 
