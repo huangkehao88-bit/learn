@@ -61,11 +61,12 @@ def main():
     ax2d.set_title("每个演示回合 · 小车到目标的距离")
     ax2d.set_xlabel("步数"); ax2d.set_ylabel("到目标距离")
     ax2d.grid(True, alpha=0.4)
-    line_dist, = ax2d.plot([], [], "g-", lw=1.5)
 
     # ---------------- 推理循环 ----------------
     results = []            # 每个回合 (是否到达, 步数)
     last_dists = []         # 每个回合结束时距离
+    all_distances = []      # 每个回合的完整距离序列（用于绘图）
+
     for ep in range(1, args.episodes + 1):
         state = env.reset()
         traj = [env.car_pos.copy()]
@@ -79,30 +80,34 @@ def main():
             dists.append(info["dist"])
             if info["dist"] < env.goal_radius:
                 reached = True
+
         last_dists.append(dists[-1])
+        all_distances.append(dists)
         results.append((reached, len(dists)))
 
-        # 更新 3D 场景
-        goal_pt.set_data([env.goal[0]], [env.goal[1]])
-        goal_pt.set_3d_properties([env.goal[2]])
-        traj_arr = np.array(traj)
-        trail.set_data(traj_arr[:, 0], traj_arr[:, 1])
-        trail.set_3d_properties(traj_arr[:, 2])
-        car_pt.set_data([env.car_pos[0]], [env.car_pos[1]])
-        car_pt.set_3d_properties([env.car_pos[2]])
-
-        # 更新距离曲线
-        line_dist.set_data(list(range(len(dists))), dists)
-        ax2d.relim(); ax2d.autoscale_view()
-        fig.canvas.draw_idle()
-        fig.canvas.flush_events()
-        plt.pause(0.4)
+        if not args.no_render:
+            # 更新 3D 场景
+            goal_pt.set_data([env.goal[0]], [env.goal[1]])
+            goal_pt.set_3d_properties([env.goal[2]])
+            traj_arr = np.array(traj)
+            trail.set_data(traj_arr[:, 0], traj_arr[:, 1])
+            trail.set_3d_properties(traj_arr[:, 2])
+            car_pt.set_data([env.car_pos[0]], [env.car_pos[1]])
+            car_pt.set_3d_properties([env.car_pos[2]])
+            fig.canvas.draw_idle()
+            fig.canvas.flush_events()
+            plt.pause(0.4)
 
         status = "到达目标" if reached else "未到达（步数用尽）"
         print(f"回合 {ep}: {status} | 用时 {len(dists)} 步 | 结束距离 {dists[-1]:.2f}")
 
-    # ---------------- 收尾 ----------------
+    # ---------------- 收尾：画出每个回合的距离曲线再保存 ----------------
+    for dists in all_distances:
+        ax2d.plot(list(range(len(dists))), dists, alpha=0.7, lw=1.5)
+    ax2d.relim(); ax2d.autoscale_view()
+    fig.canvas.draw_idle()
     fig.savefig(args.save, dpi=120, bbox_inches="tight")
+
     succ = sum(1 for r, _ in results if r)
     avg_dist = float(np.mean(last_dists))
     print(f"\n演示完成：{args.episodes} 回合中 {succ} 次到达目标"
