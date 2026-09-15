@@ -1,15 +1,13 @@
 """
-推理演示脚本 —— 加载训练好的模型，让小车"表演"它学会的技能。
+推理演示 —— 加载训练好的模型，观察玩具小车在拟真城市里自动找到的最优路径。
 
-完全不进行学习，只是利用已经训练好的 Q 网络，看小车如何追踪目标。
-展示内容：
-- 左：3D 场景，小车直接朝目标走去（轨迹收敛）
-- 右：每个演示回合小车到目标的距离曲线（应一路下降）
+小车从起点沿道路行驶，自动绕开高楼街区，到达目标（金色点）。
+左侧 3D 城市完整展示小车走的路径，右侧显示到目标的距离下降曲线。
 
 用法：
-    python predict.py                  # 加载 model.pkl 并 3D 可视化演示
-    python predict.py --model my.pkl   # 指定模型文件
-    python predict.py --no-render      # 不开窗口，只跑结果并保存图
+    python predict.py                  # 加载 model.pkl 观察城市路径
+    python predict.py --model my.pkl   # 指定模型
+    python predict.py --no-render      # 不弹窗，只跑结果并保存图
 """
 import argparse
 
@@ -17,34 +15,20 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-# 中文字体（Windows 微软雅黑，避免图上中文显示为方块）
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
+from city_vis import ToyCar, draw_buildings, draw_ground, draw_road_lines
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
 
-def _draw_obstacles(ax, env):
-    """在 3D 坐标轴上绘制所有建筑物（半透明棕色球体）。"""
-    u = np.linspace(0, 2 * np.pi, 24)
-    v = np.linspace(0, np.pi, 18)
-    for center, radius in env.obstacles:
-        x = center[0] + radius * np.outer(np.cos(u), np.sin(v))
-        y = center[1] + radius * np.outer(np.sin(u), np.sin(v))
-        z = center[2] + radius * np.outer(np.ones_like(u), np.cos(v))
-        ax.plot_surface(x, y, z, color="#b5651d", alpha=0.45, linewidth=0)
-
-
 def main():
-    parser = argparse.ArgumentParser(description="加载训练好的 3D 小车模型做推理演示")
-    parser.add_argument("--model", type=str, default="model.pkl",
-                        help="模型文件（由 train.py 生成）")
-    parser.add_argument("--episodes", type=int, default=5, help="演示回合数")
-    parser.add_argument("--save", type=str, default="predict_result.png",
-                        help="结果图保存路径")
-    parser.add_argument("--no-render", action="store_true",
-                        help="不打开窗口，只跑结果并保存图")
+    parser = argparse.ArgumentParser(description="拟真城市导航推理演示")
+    parser.add_argument("--model", type=str, default="model.pkl")
+    parser.add_argument("--episodes", type=int, default=3, help="演示回合数")
+    parser.add_argument("--save", type=str, default="predict_result.png")
+    parser.add_argument("--no-render", action="store_true")
     args = parser.parse_args()
 
     if args.no_render:
@@ -52,79 +36,92 @@ def main():
 
     env = CarEnv3D()
     agent = DQNAgent.load(args.model)
-    agent.epsilon = 0.0   # 纯利用：完全按学到的策略走，不再随机
+    agent.epsilon = 0.0
     print(f"已加载模型 {args.model}（学习步数 {agent.learn_steps}）")
 
     # ---------------- 画布 ----------------
     plt.ion()
-    fig = plt.figure(figsize=(13, 6))
+    fig = plt.figure(figsize=(13, 7))
     ax3d = fig.add_subplot(121, projection="3d")
     ax2d = fig.add_subplot(122)
 
-    ax3d.set_xlim(-9, 9); ax3d.set_ylim(-9, 9); ax3d.set_zlim(-9, 9)
-    ax3d.set_xlabel("X"); ax3d.set_ylabel("Y"); ax3d.set_zlabel("Z")
-    ax3d.set_title("推理演示 · 训练好的小车追踪目标")
-    goal_pt, = ax3d.plot([], [], [], "ro", markersize=9, label="目标")
-    trail, = ax3d.plot([], [], [], "b-", alpha=0.6, lw=1.5, label="小车轨迹")
-    car_pt, = ax3d.plot([], [], [], "bo", markersize=7, label="小车")
+    L = (env.grid - 1) * env.spacing
+    ax3d.set_xlim(-1, L + 1); ax3d.set_ylim(-1, L + 1); ax3d.set_zlim(0, 6)
+    ax3d.set_xlabel("X"); ax3d.set_ylabel("Z"); ax3d.set_zlabel("Y")
+    ax3d.set_title("拟真城市 · 小车自动寻路到目标")
+
+    draw_ground(ax3d, env.grid, env.spacing)
+    draw_road_lines(ax3d, env.grid, env.spacing)
+    draw_buildings(ax3d, env.buildings)
+
+    goal_pt, = ax3d.plot([], [], [], "yo", markersize=11, label="目标")
+    trail, = ax3d.plot([], [], [], "g-", alpha=0.8, lw=2.2, label="小车路径")
+    car = ToyCar(ax3d, 0, 0, 0)
     ax3d.legend(loc="upper left")
-    _draw_obstacles(ax3d, env)   # 画出建筑物障碍
 
     ax2d.set_title("每个演示回合 · 小车到目标的距离")
     ax2d.set_xlabel("步数"); ax2d.set_ylabel("到目标距离")
     ax2d.grid(True, alpha=0.4)
 
-    # ---------------- 推理循环 ----------------
-    results = []            # 每个回合 (是否到达, 步数)
-    last_dists = []         # 每个回合结束时距离
-    all_distances = []      # 每个回合的完整距离序列（用于绘图）
+    # ---------------- 推理循环（观察路径）----------------
+    all_distances, last_dists, path_cells, episode_goals = [], [], [], []
 
     for ep in range(1, args.episodes + 1):
         state = env.reset()
-        traj = [env.car_pos.copy()]
-        dists = [np.linalg.norm(env.goal - env.car_pos)]
+        episode_goals.append(env.goal)
+        path = [env.car]                      # 路径格点序列
+        traj_world = [env.car_world()]
+        dists = [env._dist(env.car, env.goal)]
         reached = False
         done = False
         while not done:
-            action = agent.act(state, training=False)   # 纯利用，不学习
+            action = agent.act(state, training=False)
             state, _, done, info = env.step(action)
-            traj.append(env.car_pos.copy())
+            path.append(env.car)
+            traj_world.append(env.car_world())
             dists.append(info["dist"])
-            if info["dist"] < env.goal_radius:
+            if env.car == env.goal:
                 reached = True
 
-        last_dists.append(dists[-1])
+            if not args.no_render:
+                gx, gz = env.goal_world()
+                goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.6])
+                tw = np.array(traj_world)
+                trail.set_data(tw[:, 0], tw[:, 1])
+                trail.set_3d_properties(np.full(len(tw), 0.4))
+                if len(tw) >= 2:
+                    dx, dz = tw[-1] - tw[-2]
+                    car.place(*env.car_world(), np.arctan2(-dz, dx))
+                fig.canvas.draw_idle()
+                fig.canvas.flush_events()
+                plt.pause(0.3)
+
         all_distances.append(dists)
-        results.append((reached, len(dists)))
+        last_dists.append(dists[-1])
+        path_cells.append(path)
+        steps = [f"{c[0]},{c[1]}" for c in path]
+        print(f"回合 {ep}: {'到达目标' if reached else '未到达'} | "
+              f"用时 {len(path)-1} 步 | 路径 {steps}")
 
-        if not args.no_render:
-            # 更新 3D 场景
-            goal_pt.set_data([env.goal[0]], [env.goal[1]])
-            goal_pt.set_3d_properties([env.goal[2]])
-            traj_arr = np.array(traj)
-            trail.set_data(traj_arr[:, 0], traj_arr[:, 1])
-            trail.set_3d_properties(traj_arr[:, 2])
-            car_pt.set_data([env.car_pos[0]], [env.car_pos[1]])
-            car_pt.set_3d_properties([env.car_pos[2]])
-            fig.canvas.draw_idle()
-            fig.canvas.flush_events()
-            plt.pause(0.4)
+    # ---------------- 收尾：画路径 + 距离曲线 ----------------
+    gx, gz = env.goal_world()
+    goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.6])
+    tw = np.array(traj_world)
+    trail.set_data(tw[:, 0], tw[:, 1]); trail.set_3d_properties(np.full(len(tw), 0.4))
+    if len(tw) >= 2:
+        dx, dz = tw[-1] - tw[-2]
+        car.place(*env.car_world(), np.arctan2(-dz, dx))
 
-        status = "到达目标" if reached else "未到达（步数用尽）"
-        print(f"回合 {ep}: {status} | 用时 {len(dists)} 步 | 结束距离 {dists[-1]:.2f}")
-
-    # ---------------- 收尾：画出每个回合的距离曲线再保存 ----------------
     for dists in all_distances:
         ax2d.plot(list(range(len(dists))), dists, alpha=0.7, lw=1.5)
     ax2d.relim(); ax2d.autoscale_view()
     fig.canvas.draw_idle()
     fig.savefig(args.save, dpi=120, bbox_inches="tight")
 
-    succ = sum(1 for r, _ in results if r)
-    avg_dist = float(np.mean(last_dists))
+    succ = sum(1 for p, g in zip(path_cells, episode_goals) if p[-1] == g)
+    avg_steps = np.mean([len(p) - 1 for p in path_cells])
     print(f"\n演示完成：{args.episodes} 回合中 {succ} 次到达目标"
-          f"（成功率 {succ / args.episodes:.0%}）")
-    print(f"平均结束距离 {avg_dist:.2f}（越小说明越接近目标）")
+          f"（成功率 {succ / args.episodes:.0%}），平均用时 {avg_steps:.1f} 步")
     print(f"结果图已保存为 {args.save}")
 
     if args.no_render:

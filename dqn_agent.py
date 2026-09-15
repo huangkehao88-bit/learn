@@ -64,9 +64,11 @@ class DQNAgent:
         batch = random.sample(self.memory, self.batch_size)
         total_loss = 0.0
         for s, a, r, s2, done in batch:
-            # TD 目标：r + γ·max Q'(s')（终止状态没有未来项）
-            q_next = self.target_net.predict(s2)
-            target = r if done else r + self.gamma * float(np.max(q_next))
+            # Double DQN：用 Q 网络挑最优动作，再用目标网络评估该动作的值
+            # （减少 Q 值过估计，比普通 DQN 学习更稳定）
+            best_action = int(np.argmax(self.q_net.predict(s2)))
+            q_next = self.target_net.predict(s2)[best_action]
+            target = r if done else r + self.gamma * float(q_next)
             # 裁剪目标值，防止 Q 值发散（DQN 稳定的关键技巧）
             target = float(np.clip(target, -30.0, 30.0))
             # 只让"被选动作"的 Q 值朝目标靠近，其余动作的误差置 0

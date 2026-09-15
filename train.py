@@ -1,16 +1,16 @@
 """
-训练主程序 —— 3D 智能小车 DQN 学习过程实时可视化。
+训练主程序 —— 拟真城市 DQN（Double DQN）城市导航学习。
 
-运行后弹出两个面板：
-- 左：3D 场景，蓝色小车实时追踪红色目标（蓝线是它本回合的轨迹）
-- 右：学习曲线，每个回合的累计奖励逐渐爬升
+运行后弹出实时 3D 城市界面：
+- 左：拟真城市（灰色道路 + 白色路中线 + 高楼街区 + 玩具小车沿道路行驶 + 绿色路径）
+- 右：学习曲线（每个回合累计奖励，逐渐爬升）
 
-训练结束后会把学到的模型保存下来（--model-out），之后可用 predict.py 直接演示。
+小车必须沿道路格点行驶，不能穿楼，DQN 学会找到到达目标的最优路径。
 
 用法：
-    python train.py                          # 完整训练 + 实时可视化窗口
-    python train.py --episodes 300           # 只训练 300 回合
-    python train.py --no-render              # 不开窗口，快速训练并保存结果图和模型
+    python train.py                      # 训练 + 实时 3D 城市窗口
+    python train.py --episodes 400       # 只训练 400 回合
+    python train.py --no-render          # 快速训练并保存结果图和模型
 """
 import argparse
 
@@ -18,60 +18,54 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-# 中文字体（Windows 微软雅黑，避免图上中文显示为方块）
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
+from city_vis import ToyCar, draw_buildings, draw_ground, draw_road_lines
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
 
-def _draw_obstacles(ax, env):
-    """在 3D 坐标轴上绘制所有建筑物（半透明棕色球体）。"""
-    u = np.linspace(0, 2 * np.pi, 24)
-    v = np.linspace(0, np.pi, 18)
-    for center, radius in env.obstacles:
-        x = center[0] + radius * np.outer(np.cos(u), np.sin(v))
-        y = center[1] + radius * np.outer(np.sin(u), np.sin(v))
-        z = center[2] + radius * np.outer(np.ones_like(u), np.cos(v))
-        ax.plot_surface(x, y, z, color="#b5651d", alpha=0.45, linewidth=0)
-
-
 def main():
-    parser = argparse.ArgumentParser(description="3D 智能小车 DQN 训练可视化")
+    parser = argparse.ArgumentParser(description="拟真城市 DQN 城市导航训练")
     parser.add_argument("--episodes", type=int, default=500, help="训练回合数")
     parser.add_argument("--render-every", type=int, default=2,
-                        help="每 N 个回合刷新一次画面（越大越快）")
+                        help="每 N 个回合刷新一次画面")
     parser.add_argument("--save", type=str, default="training_result.png",
                         help="最终结果图保存路径")
     parser.add_argument("--model-out", type=str, default="model.pkl",
-                        help="训练好的模型保存路径（可被 predict.py 加载）")
+                        help="训练好的模型保存路径")
     parser.add_argument("--no-render", action="store_true",
                         help="不打开窗口，只训练并保存结果图和模型")
     args = parser.parse_args()
 
-    # 不显示窗口时用无界面后端
     if args.no_render:
         matplotlib.use("Agg")
 
     env = CarEnv3D()
     agent = DQNAgent(state_dim=env._state().shape[0], n_actions=env.n_actions)
 
-    # ---------------- 可视化画布 ----------------
+    # ---------------- 画布 ----------------
     plt.ion()
-    fig = plt.figure(figsize=(13, 6))
+    fig = plt.figure(figsize=(13, 7))
     ax3d = fig.add_subplot(121, projection="3d")
     ax2d = fig.add_subplot(122)
 
-    # 左侧 3D 场景
-    ax3d.set_xlim(-9, 9); ax3d.set_ylim(-9, 9); ax3d.set_zlim(-9, 9)
-    ax3d.set_xlabel("X"); ax3d.set_ylabel("Y"); ax3d.set_zlabel("Z")
-    ax3d.set_title("3D 智能小车 · DQN 学习追踪目标")
-    goal_pt, = ax3d.plot([], [], [], "ro", markersize=9, label="目标")
-    trail, = ax3d.plot([], [], [], "b-", alpha=0.6, lw=1.5, label="小车轨迹")
-    car_pt, = ax3d.plot([], [], [], "bo", markersize=7, label="小车")
+    L = (env.grid - 1) * env.spacing
+    ax3d.set_xlim(-1, L + 1); ax3d.set_ylim(-1, L + 1); ax3d.set_zlim(0, 6)
+    ax3d.set_xlabel("X"); ax3d.set_ylabel("Z"); ax3d.set_zlabel("Y")
+    ax3d.set_title("拟真城市 · DQN 学习城市导航")
+
+    # 静态城市：地面 + 道路 + 高楼
+    draw_ground(ax3d, env.grid, env.spacing)
+    draw_road_lines(ax3d, env.grid, env.spacing)
+    draw_buildings(ax3d, env.buildings)
+
+    # 目标点（金色）、路径、玩具小车
+    goal_pt, = ax3d.plot([], [], [], "yo", markersize=11, label="目标")
+    trail, = ax3d.plot([], [], [], "g-", alpha=0.8, lw=2.2, label="小车路径")
+    car = ToyCar(ax3d, 0, 0, 0)
     ax3d.legend(loc="upper left")
-    _draw_obstacles(ax3d, env)   # 画出建筑物障碍
 
     # 右侧学习曲线
     ax2d.set_title("每个回合累计奖励（学习曲线）")
@@ -88,7 +82,7 @@ def main():
     for ep in range(1, args.episodes + 1):
         state = env.reset()
         total_reward = 0.0
-        traj = [env.car_pos.copy()]
+        traj_world = [env.car_world()]
         done = False
 
         while not done:
@@ -101,35 +95,41 @@ def main():
                 loss_count += 1
             state = state2
             total_reward += reward
-            traj.append(env.car_pos.copy())
+            traj_world.append(env.car_world())
 
         episode_rewards.append(total_reward)
         avg50 = float(np.mean(episode_rewards[-50:]))
 
-        # ---- 更新可视化（仅渲染模式：每 render-every 回合刷新一次）----
         if not args.no_render and (ep % args.render_every == 0 or ep == 1):
-            goal_pt.set_data([env.goal[0]], [env.goal[1]])
-            goal_pt.set_3d_properties([env.goal[2]])
+            # 目标 + 路径
+            gx, gz = env.goal_world()
+            goal_pt.set_data([gx], [gz])
+            goal_pt.set_3d_properties([0.6])
 
-            traj_arr = np.array(traj)
-            trail.set_data(traj_arr[:, 0], traj_arr[:, 1])
-            trail.set_3d_properties(traj_arr[:, 2])
+            tw = np.array(traj_world)
+            trail.set_data(tw[:, 0], tw[:, 1])
+            trail.set_3d_properties(np.full(len(tw), 0.4))
 
-            car_pt.set_data([env.car_pos[0]], [env.car_pos[1]])
-            car_pt.set_3d_properties([env.car_pos[2]])
+            # 小车朝向最后移动方向
+            if len(tw) >= 2:
+                dx, dz = tw[-1] - tw[-2]
+                yaw = np.arctan2(-dz, dx)
+            else:
+                yaw = 0.0
+            cx, cz = env.car_world()
+            car.place(cx, cz, yaw)
 
+            # 学习曲线
             xs = list(range(1, len(episode_rewards) + 1))
             line_reward.set_data(xs, episode_rewards)
             if len(episode_rewards) >= 50:
                 line_avg.set_data(xs, [np.mean(episode_rewards[max(0, i - 50):i + 1])
                                        for i in range(len(episode_rewards))])
             ax2d.relim(); ax2d.autoscale_view()
-
             fig.canvas.draw_idle()
             fig.canvas.flush_events()
             plt.pause(0.001)
 
-        # ---- 打印进度 ----
         if ep % 20 == 0 or ep == 1:
             avg_loss = running_loss / max(loss_count, 1)
             print(f"回合 {ep:>4d} | 本回合奖励 {total_reward:6.1f} | "
@@ -137,14 +137,17 @@ def main():
                   f"平均损失 {avg_loss:.4f}")
             running_loss, loss_count = 0.0, 0
 
-    # ---------------- 收尾：补画最后一回合 3D + 完整曲线，再保存 ----------------
-    goal_pt.set_data([env.goal[0]], [env.goal[1]])
-    goal_pt.set_3d_properties([env.goal[2]])
-    traj_arr = np.array(traj)
-    trail.set_data(traj_arr[:, 0], traj_arr[:, 1])
-    trail.set_3d_properties(traj_arr[:, 2])
-    car_pt.set_data([env.car_pos[0]], [env.car_pos[1]])
-    car_pt.set_3d_properties([env.car_pos[2]])
+    # ---------------- 收尾：补画最后一个回合 + 完整曲线 ----------------
+    gx, gz = env.goal_world()
+    goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.6])
+    tw = np.array(traj_world)
+    trail.set_data(tw[:, 0], tw[:, 1])
+    trail.set_3d_properties(np.full(len(tw), 0.4))
+    if len(tw) >= 2:
+        dx, dz = tw[-1] - tw[-2]
+        car.place(*env.car_world(), np.arctan2(-dz, dx))
+    else:
+        car.place(*env.car_world(), 0.0)
 
     xs = list(range(1, len(episode_rewards) + 1))
     line_reward.set_data(xs, episode_rewards)
@@ -155,12 +158,10 @@ def main():
     fig.canvas.draw_idle()
 
     fig.savefig(args.save, dpi=120, bbox_inches="tight")
-
-    # 保存训练好的模型，供 predict.py 推理演示
     agent.save(args.model_out)
     print(f"\n训练完成！共 {args.episodes} 回合")
     print(f"结果图已保存为 {args.save}")
-    print(f"模型已保存为 {args.model_out}（可用 python predict.py 演示）")
+    print(f"模型已保存为 {args.model_out}（可用 python predict.py 观察城市路径）")
 
     if args.no_render:
         plt.close(fig)
