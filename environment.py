@@ -26,8 +26,8 @@ class CarEnv3D:
         self.node_xy = np.zeros((grid, grid, 2))
         for i in range(grid):
             for j in range(grid):
-                ox = rng.uniform(-0.32, 0.32) * spacing
-                oz = rng.uniform(-0.32, 0.32) * spacing
+                ox = rng.uniform(-0.45, 0.45) * spacing
+                oz = rng.uniform(-0.45, 0.45) * spacing
                 self.node_xy[i, j] = [i * spacing + ox, j * spacing + oz]
 
         # 道路边：相邻交叉口之间的街道（直线，因为节点扭曲所以不规整）
@@ -81,7 +81,7 @@ class CarEnv3D:
                 cz = (p00[1] + p10[1] + p01[1] + p11[1]) / 4
                 sx = np.hypot(p10[0] - p00[0], p10[1] - p00[1]) * 0.55
                 sz = np.hypot(p01[0] - p00[0], p01[1] - p00[1]) * 0.55
-                if rng.random() < 0.3:            # 30% 街区留空（空地/公园）
+                if rng.random() < 0.4:            # 40% 街区留空（空地/公园）
                     continue
                 h = rng.uniform(1.0, 2.6)
                 self.buildings.append((cx, cz, sx, sz, h))
