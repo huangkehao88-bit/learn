@@ -18,20 +18,19 @@ def set_isometric_view(ax, elev=62, azim=-45):
         pass
 
 
-def draw_ground(ax, street_x, street_z):
-    """画底面（道路）。street_x / street_z 为街道位置数组。"""
-    xx, zz = np.meshgrid([0.0, street_x[-1]], [0.0, street_z[-1]])
-    yy = np.zeros_like(xx)
-    ax.plot_surface(xx, zz, yy, color="#7d7d7d", alpha=0.9)
+def draw_ground(ax, node_xy):
+    """画底面（道路）。node_xy 为交叉口世界坐标 (grid, grid, 2)。"""
+    xs = node_xy[:, :, 0]
+    zs = node_xy[:, :, 1]
+    xx, zz = np.meshgrid([xs.min() - 0.7, xs.max() + 0.7],
+                         [zs.min() - 0.7, zs.max() + 0.7])
+    ax.plot_surface(xx, zz, np.zeros_like(xx), color="#7d7d7d", alpha=0.9)
 
 
-def draw_road_lines(ax, street_x, street_z):
-    """画道路中线（白色，沿不规则街道，贴在地面）。"""
-    xmax, zmax = street_x[-1], street_z[-1]
-    for p in street_x:
-        ax.plot([p, p], [0, zmax], [0, 0], color="white", lw=1.4, alpha=0.85)
-    for p in street_z:
-        ax.plot([0, xmax], [p, p], [0, 0], color="white", lw=1.4, alpha=0.85)
+def draw_roads(ax, road_edges):
+    """画不规则道路（相邻交叉口之间的街道，白色，贴在地面）。"""
+    for (x1, z1), (x2, z2) in road_edges:
+        ax.plot([x1, x2], [z1, z2], [0, 0], color="white", lw=1.3, alpha=0.85)
 
 
 def _box_verts(cx, cz, sx, sz, h, y0):

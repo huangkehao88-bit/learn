@@ -19,7 +19,7 @@ matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-ser
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 from city_vis import (ToyCar, draw_buildings, draw_ground,
-                      draw_road_lines, set_isometric_view)
+                      draw_roads, set_isometric_view)
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
@@ -46,12 +46,12 @@ def main():
     ax = fig.add_subplot(121, projection="3d")
     ax2d = fig.add_subplot(122)
 
-    Lx, Lz = env.street_x[-1], env.street_z[-1]
-    ax.set_xlim(0, Lx); ax.set_ylim(0, Lz); ax.set_zlim(0, 4)
+    xmin, xmax, zmin, zmax = env.world_bounds
+    ax.set_xlim(xmin, xmax); ax.set_ylim(zmin, zmax); ax.set_zlim(0, 4)
     ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
-    ax.set_title("3D 斜俯视城市 · 小车自动寻路到目标")
-    draw_ground(ax, env.street_x, env.street_z)
-    draw_road_lines(ax, env.street_x, env.street_z)
+    ax.set_title("3D 俯视透视城市 · 小车自动寻路到目标")
+    draw_ground(ax, env.node_xy)
+    draw_roads(ax, env.road_edges)
     draw_buildings(ax, env.buildings)
     set_isometric_view(ax)
 
