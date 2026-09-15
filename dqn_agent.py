@@ -1,0 +1,88 @@
+"""
+DQN 智能体 —— 强化学习的"大脑"。
+
+它利用上一节手写的神经网络（Q 网络），教会小车"看到什么状态，走哪个动作"。
+核心组件：
+- ε-greedy 探索：一开始多随机尝试，慢慢转为利用经验
+- 经验回放：把过去的经验存起来随机抽样学习，打破数据相关性
+- 目标网络：提供一个"稳定的标准"来算目标值，让学习更平稳
+"""
+import random
+from collections import deque
+
+import numpy as np
+
+from neural_net import NeuralNet
+
+
+class DQNAgent:
+    def __init__(self, state_dim: int, n_actions: int, lr: float = 1e-3,
+                 gamma: float = 0.99, epsilon: float = 1.0,
+                 epsilon_min: float = 0.05, epsilon_decay: float = 0.995,
+                 buffer_size: int = 20000, batch_size: int = 32,
+                 target_update_interval: int = 100, seed: int | None = None):
+        self.state_dim = state_dim
+        self.n_actions = n_actions
+        self.gamma = gamma                      # 折扣因子：未来奖励的打折程度
+        self.epsilon = epsilon                  # 当前探索率
+        self.epsilon_min = epsilon_min          # 探索率下限
+        self.epsilon_decay = epsilon_decay      # 每次学习后探索率衰减比例
+        self.batch_size = batch_size
+        self.target_update_interval = target_update_interval
+        self.learn_steps = 0
+        if seed is not None:
+            random.seed(seed)
+
+        # 两个结构相同的网络：Q 网络(实时更新) + 目标网络(定期同步)
+        sizes = [state_dim, 64, 64, n_actions]
+        self.q_net = NeuralNet(sizes, lr=lr)
+        self.target_net = NeuralNet(sizes, lr=lr)
+        self._sync_target()
+
+        # 经验回放缓冲（先进先出，满了丢弃最旧的）
+        self.memory = deque(maxlen=buffer_size)
+
+    # ---------------------------------------------------------------
+    def act(self, state, training: bool = True) -> int:
+        """ε-greedy：按探索率随机，否则选 Q 值最大的动作。"""
+        if training and np.random.rand() < self.epsilon:
+            return np.random.randint(self.n_actions)
+        q = self.q_net.predict(state)
+        return int(np.argmax(q))
+
+    def remember(self, s, a, r, s2, done):
+        """把一次经验 (状态, 动作, 奖励, 新状态, 是否结束) 存入记忆。"""
+        self.memory.append((s, a, r, s2, done))
+
+    def replay(self):
+        """从记忆中采样一批经验学习，返回平均损失（不足一批则返回 None）。"""
+        if len(self.memory) < self.batch_size:
+            return None
+
+        batch = random.sample(self.memory, self.batch_size)
+        total_loss = 0.0
+        for s, a, r, s2, done in batch:
+            # TD 目标：r + γ·max Q'(s')（终止状态没有未来项）
+            q_next = self.target_net.predict(s2)
+            target = r if done else r + self.gamma * float(np.max(q_next))
+            # 只让"被选动作"的 Q 值朝目标靠近，其余动作的误差置 0
+            q = self.q_net.predict(s)
+            d_out = np.zeros_like(q)
+            d_out[a] = q[a] - target
+            total_loss += self.q_net.backprop_and_update(s, d_out)
+
+        # 定期同步目标网络权重
+        self.learn_steps += 1
+        if self.learn_steps % self.target_update_interval == 0:
+            self._sync_target()
+
+        # 探索率衰减（越到后期越"经验主义"，少随机）
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        return total_loss / len(batch)
+
+    # ---------------------------------------------------------------
+    def _sync_target(self):
+        """把 Q 网络的权重整体复制给目标网络。"""
+        for i in range(len(self.q_net.W)):
+            self.target_net.W[i] = self.q_net.W[i].copy()
+            self.target_net.b[i] = self.q_net.b[i].copy()
