@@ -5,11 +5,10 @@
 - 小车沿不规则道路自动寻路到目标（绿色路径）
 - 遇到红灯会停下等待（红绿灯红/绿切换）
 - 前方有其他车时让行等待，安全会车
-- 3D 摄像机实时跟随小车（车始终在画面中心）
+- 固定全景视角展示整个城市
 
 用法：
-    python predict.py                     # 默认摄像机跟随
-    python predict.py --no-follow         # 固定全景视角
+    python predict.py
     python predict.py --model my.pkl
 """
 import argparse
@@ -29,19 +28,12 @@ from environment import CarEnv3D
 NPC_COLORS = ["crimson", "darkorange", "rebeccapurple"]
 
 
-def follow_camera(ax, x, z, span=5.0):
-    """3D 摄像机跟随小车：画面中心对准小车位置。"""
-    ax.set_xlim(x - span, x + span)
-    ax.set_ylim(z - span, z + span)
-
-
 def main():
     parser = argparse.ArgumentParser(description="拟真城市自动驾驶推理演示")
     parser.add_argument("--model", type=str, default="model.pkl")
     parser.add_argument("--episodes", type=int, default=3, help="演示回合数")
     parser.add_argument("--save", type=str, default="predict_result.png")
     parser.add_argument("--no-render", action="store_true")
-    parser.add_argument("--no-follow", action="store_true", help="关闭摄像机跟随")
     args = parser.parse_args()
 
     if args.no_render:
@@ -121,8 +113,6 @@ def main():
                 update_signals(signal_artists, env)
                 for k, npc in enumerate(env.npc_cars):
                     npc_cars[k].place(*env._world(npc["pos"]), 0.0)
-                if not args.no_follow:          # 摄像机跟随小车
-                    follow_camera(ax, cx, cz)
                 fig.canvas.draw_idle()
                 fig.canvas.flush_events()
                 plt.pause(0.3)

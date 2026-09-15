@@ -96,8 +96,8 @@ class CarEnv3D:
                 p01, p11 = self.node_xy[i, j + 1], self.node_xy[i + 1, j + 1]
                 cx = (p00[0] + p10[0] + p01[0] + p11[0]) / 4
                 cz = (p00[1] + p10[1] + p01[1] + p11[1]) / 4
-                sx = np.hypot(p10[0] - p00[0], p10[1] - p00[1]) * 0.55
-                sz = np.hypot(p01[0] - p00[0], p01[1] - p00[1]) * 0.55
+                sx = np.hypot(p10[0] - p00[0], p10[1] - p00[1]) * 0.40
+                sz = np.hypot(p01[0] - p00[0], p01[1] - p00[1]) * 0.40
                 if rng.random() < 0.4:            # 40% 留空
                     continue
                 h = rng.uniform(1.0, 2.6)
