@@ -21,8 +21,8 @@ import numpy as np
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
-from city_vis import (ToyCar, draw_buildings, draw_ground,
-                      draw_roads, set_isometric_view)
+from city_vis import (ToyCar, draw_buildings, draw_ground, draw_roads,
+                      draw_signals, set_isometric_view, update_signals)
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
@@ -59,6 +59,10 @@ def main():
     draw_ground(ax, env.node_xy)
     draw_roads(ax, env.road_edges)
     draw_buildings(ax, env.buildings)
+    signal_artists = draw_signals(ax, env)
+    npc_colors = ["crimson", "darkorange", "rebeccapurple"]
+    npc_cars = [ToyCar(ax, *env._world(npc["pos"]), 0, color=npc_colors[k % 3])
+                for k, npc in enumerate(env.npc_cars)]
     set_isometric_view(ax)
 
     goal_pt, = ax.plot([], [], [], "o", color="gold", ms=11, mec="k",
@@ -116,6 +120,9 @@ def main():
             else:
                 yaw = 0.0
             car.place(*env.car_world(), yaw)
+            update_signals(signal_artists, env)
+            for k, npc in enumerate(env.npc_cars):
+                npc_cars[k].place(*env._world(npc["pos"]), 0.0)
 
             xs = list(range(1, len(episode_rewards) + 1))
             line_reward.set_data(xs, episode_rewards)

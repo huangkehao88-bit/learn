@@ -1,13 +1,16 @@
 """
-推理演示 —— 3D 斜俯视城市，观察玩具小车自动找到的最优路径。
+推理演示 —— 3D 俯视透视城市自动驾驶，实时摄像机跟随小车。
 
-小车从起点沿道路行驶，自动绕开立体高楼街区到达目标（金色点）。
-左侧 3D 斜俯视城市清晰展示小车走的路径（绿色），右侧显示到目标的距离下降曲线。
+演示内容：
+- 小车沿不规则道路自动寻路到目标（绿色路径）
+- 遇到红灯会停下等待（红绿灯红/绿切换）
+- 前方有其他车时让行等待，安全会车
+- 3D 摄像机实时跟随小车（车始终在画面中心）
 
 用法：
-    python predict.py                  # 加载 model.pkl 观察城市路径
-    python predict.py --model my.pkl   # 指定模型
-    python predict.py --no-render      # 不弹窗，只跑结果并保存图
+    python predict.py                     # 默认摄像机跟随
+    python predict.py --no-follow         # 固定全景视角
+    python predict.py --model my.pkl
 """
 import argparse
 
@@ -18,18 +21,27 @@ import numpy as np
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
-from city_vis import (ToyCar, draw_buildings, draw_ground,
-                      draw_roads, set_isometric_view)
+from city_vis import (ToyCar, draw_buildings, draw_ground, draw_roads,
+                      draw_signals, set_isometric_view, update_signals)
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
+NPC_COLORS = ["crimson", "darkorange", "rebeccapurple"]
+
+
+def follow_camera(ax, x, z, span=5.0):
+    """3D 摄像机跟随小车：画面中心对准小车位置。"""
+    ax.set_xlim(x - span, x + span)
+    ax.set_ylim(z - span, z + span)
+
 
 def main():
-    parser = argparse.ArgumentParser(description="拟真城市导航推理演示")
+    parser = argparse.ArgumentParser(description="拟真城市自动驾驶推理演示")
     parser.add_argument("--model", type=str, default="model.pkl")
     parser.add_argument("--episodes", type=int, default=3, help="演示回合数")
     parser.add_argument("--save", type=str, default="predict_result.png")
     parser.add_argument("--no-render", action="store_true")
+    parser.add_argument("--no-follow", action="store_true", help="关闭摄像机跟随")
     args = parser.parse_args()
 
     if args.no_render:
@@ -40,7 +52,7 @@ def main():
     agent.epsilon = 0.0
     print(f"已加载模型 {args.model}（学习步数 {agent.learn_steps}）")
 
-    # ---------------- 画布（3D 斜俯视）----------------
+    # ---------------- 画布（3D 俯视透视）----------------
     plt.ion()
     fig = plt.figure(figsize=(12.5, 6.5))
     ax = fig.add_subplot(121, projection="3d")
@@ -49,10 +61,13 @@ def main():
     xmin, xmax, zmin, zmax = env.world_bounds
     ax.set_xlim(xmin, xmax); ax.set_ylim(zmin, zmax); ax.set_zlim(0, 4)
     ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
-    ax.set_title("3D 俯视透视城市 · 小车自动寻路到目标")
+    ax.set_title("3D 俯视透视城市 · 自动驾驶（红灯/会车）")
     draw_ground(ax, env.node_xy)
     draw_roads(ax, env.road_edges)
     draw_buildings(ax, env.buildings)
+    signal_artists = draw_signals(ax, env)
+    npc_cars = [ToyCar(ax, *env._world(npc["pos"]), 0, color=NPC_COLORS[k % 3])
+                for k, npc in enumerate(env.npc_cars)]
     set_isometric_view(ax)
 
     goal_pt, = ax.plot([], [], [], "o", color="gold", ms=11, mec="k",
@@ -66,20 +81,27 @@ def main():
     ax2d.set_xlabel("步数"); ax2d.set_ylabel("到目标距离")
     ax2d.grid(True, alpha=0.4)
 
-    # ---------------- 推理循环（观察路径）----------------
+    # ---------------- 推理循环（观察自动驾驶）----------------
     all_distances, path_cells, episode_goals = [], [], []
+    waits = []                                  # 记录每回合的等灯/让行次数
 
     for ep in range(1, args.episodes + 1):
         state = env.reset()
         episode_goals.append(env.goal)
-        path = [env.car]                      # 路径格点序列
+        path = [env.car]
         traj_world = [env.car_world()]
         dists = [env._dist(env.car, env.goal)]
         reached = False
         done = False
+        wait_count = 0
+        prev_car = env.car
+
         while not done:
             action = agent.act(state, training=False)
-            state, _, done, info = env.step(action)
+            state, reward, done, info = env.step(action)
+            if env.car == prev_car:             # 小车没动 = 在等灯/让行
+                wait_count += 1
+            prev_car = env.car
             path.append(env.car)
             traj_world.append(env.car_world())
             dists.append(info["dist"])
@@ -87,26 +109,33 @@ def main():
                 reached = True
 
             if not args.no_render:
+                cx, cz = env.car_world()
                 gx, gz = env.goal_world()
-                goal_pt.set_data([gx], [gz])
-                goal_pt.set_3d_properties([0.5])
+                goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.5])
                 tw = np.array(traj_world)
                 trail.set_data(tw[:, 0], tw[:, 1])
                 trail.set_3d_properties(np.full(len(tw), 0.12))
                 if len(tw) >= 2:
                     dx, dz = tw[-1] - tw[-2]
-                    car.place(*env.car_world(), np.arctan2(dz, dx))
+                    car.place(cx, cz, np.arctan2(dz, dx))
+                update_signals(signal_artists, env)
+                for k, npc in enumerate(env.npc_cars):
+                    npc_cars[k].place(*env._world(npc["pos"]), 0.0)
+                if not args.no_follow:          # 摄像机跟随小车
+                    follow_camera(ax, cx, cz)
                 fig.canvas.draw_idle()
                 fig.canvas.flush_events()
-                plt.pause(0.35)
+                plt.pause(0.3)
 
         all_distances.append(dists)
         path_cells.append(path)
+        waits.append(wait_count)
         steps = " → ".join(f"{c[0]},{c[1]}" for c in path)
-        print(f"回合 {ep}: {'到达目标' if reached else '未到达'} | "
-              f"用时 {len(path) - 1} 步 | 路径 {steps}")
+        print(f"回合 {ep}: {'到达' if reached else '未达'} | 用时 {len(path)-1} 步 | "
+              f"等灯/让行 {wait_count} 次 | 路径 {steps}")
 
-    # ---------------- 收尾：画最后一个回合路径 + 距离曲线 ----------------
+    # ---------------- 收尾：拉回全景 + 距离曲线 ----------------
+    ax.set_xlim(xmin, xmax); ax.set_ylim(zmin, zmax)
     gx, gz = env.goal_world()
     goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.5])
     tw = np.array(traj_world)

@@ -93,3 +93,22 @@ class ToyCar:
                 colors.append(col)
         self._pc.set_verts(faces)
         self._pc.set_facecolors(colors)
+
+
+def draw_signals(ax, env):
+    """画红绿灯（信号路口上方的红/绿圆点）。返回 artist 供每步刷新。"""
+    artists = []
+    for node in env.signal_nodes:
+        x, z = env._world(node)
+        red = env._signal_is_red(node)
+        s = ax.scatter([x], [z], [1.8], s=110, marker="o",
+                       color="red" if red else "limegreen",
+                       edgecolor="k", linewidths=1.0)
+        artists.append((node, s))
+    return artists
+
+
+def update_signals(artists, env):
+    """每步刷新红绿灯颜色（红/绿周期切换）。"""
+    for node, s in artists:
+        s.set_color("red" if env._signal_is_red(node) else "limegreen")
