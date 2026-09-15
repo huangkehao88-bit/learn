@@ -9,9 +9,13 @@ import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
-def set_isometric_view(ax, elev=40, azim=-58):
-    """设置斜俯视视角（等距感，能看到楼高又能看清道路）。"""
+def set_isometric_view(ax, elev=62, azim=-45):
+    """设置俯视透视视角：近处楼低、远处楼高，有纵深，又能看清路径。"""
     ax.view_init(elev=elev, azim=azim)
+    try:
+        ax.set_proj_type("persp")      # 透视投影，产生近大远小（近低远高）的纵深
+    except Exception:
+        pass
 
 
 def draw_ground(ax, street_x, street_z):
@@ -31,17 +35,17 @@ def draw_road_lines(ax, street_x, street_z):
 
 
 def _box_verts(cx, cz, sx, sz, h, y0):
-    """返回长方体（中心 cx,cz，尺寸 sx×sz，高 h，底 y0）的 6 个面。"""
-    x0, x1 = cx - sx / 2, cx + sx / 2
-    z0, z1 = cz - sz / 2, cz + sz / 2
-    y1 = y0 + h
+    """长方体 6 个面。坐标系：x 横、y 纵为地面（水平面），高度 h 为 z 轴。"""
+    x0, x1 = cx - sx / 2, cx + sx / 2     # matplotlib x（横）
+    z0, z1 = cz - sz / 2, cz + sz / 2     # matplotlib y（纵，世界 z）
+    zbot, ztop = y0, y0 + h               # matplotlib z（高度）
     return [
-        [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)],
-        [(x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1)],
-        [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)],
-        [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)],
-        [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)],
-        [(x1, y0, z0), (x1, y0, z1), (x1, y1, z1), (x1, y1, z0)],
+        [(x0, z0, zbot), (x1, z0, zbot), (x1, z1, zbot), (x0, z1, zbot)],
+        [(x0, z0, ztop), (x1, z0, ztop), (x1, z1, ztop), (x0, z1, ztop)],
+        [(x0, z0, zbot), (x1, z0, zbot), (x1, z0, ztop), (x0, z0, ztop)],
+        [(x0, z1, zbot), (x1, z1, zbot), (x1, z1, ztop), (x0, z1, ztop)],
+        [(x0, z0, zbot), (x0, z0, ztop), (x0, z1, ztop), (x0, z1, zbot)],
+        [(x1, z0, zbot), (x1, z0, ztop), (x1, z1, ztop), (x1, z1, zbot)],
     ]
 
 
@@ -75,16 +79,17 @@ class ToyCar:
         self.place(x, z, yaw)
 
     def place(self, x, z, yaw):
-        """把小车放到世界坐标 (x, z)，车头朝向 yaw（弧度，绕 y 轴旋转）。"""
+        """把小车放到世界坐标 (x, z)，车头朝向 yaw（绕高度 z 轴旋转）。"""
         c, s = np.cos(yaw), np.sin(yaw)
         faces, colors = [], []
         for cx, cz, sx, sz, h, y0, col in self.parts:
             for face in _box_verts(cx, cz, sx, sz, h, y0):
                 wf = []
                 for (lx, ly, lz) in face:
-                    wx = x + lx * c + lz * s
-                    wz = z - lx * s + lz * c
-                    wf.append((wx, ly, wz))
+                    # lx=横, ly=纵(世界z), lz=高度；旋转作用于水平面
+                    wx = x + lx * c + ly * s
+                    wy = z - lx * s + ly * c
+                    wf.append((wx, wy, lz))
                 faces.append(wf)
                 colors.append(col)
         self._pc.set_verts(faces)

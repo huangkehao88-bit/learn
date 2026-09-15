@@ -54,7 +54,7 @@ def main():
 
     Lx, Lz = env.street_x[-1], env.street_z[-1]
     ax.set_xlim(0, Lx); ax.set_ylim(0, Lz); ax.set_zlim(0, 4)
-    ax.set_xlabel("X"); ax.set_ylabel("Z"); ax.set_zlabel("Y")
+    ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
     ax.set_title("3D 斜俯视城市 · DQN 学习城市导航")
     draw_ground(ax, env.street_x, env.street_z)
     draw_road_lines(ax, env.street_x, env.street_z)
