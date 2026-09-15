@@ -46,12 +46,12 @@ def main():
     ax = fig.add_subplot(121, projection="3d")
     ax2d = fig.add_subplot(122)
 
-    L = (env.grid - 1) * env.spacing
-    ax.set_xlim(0, L); ax.set_ylim(0, L); ax.set_zlim(0, 4)
+    Lx, Lz = env.street_x[-1], env.street_z[-1]
+    ax.set_xlim(0, Lx); ax.set_ylim(0, Lz); ax.set_zlim(0, 4)
     ax.set_xlabel("X"); ax.set_ylabel("Z"); ax.set_zlabel("Y")
     ax.set_title("3D 斜俯视城市 · 小车自动寻路到目标")
-    draw_ground(ax, env.grid, env.spacing)
-    draw_road_lines(ax, env.grid, env.spacing)
+    draw_ground(ax, env.street_x, env.street_z)
+    draw_road_lines(ax, env.street_x, env.street_z)
     draw_buildings(ax, env.buildings)
     set_isometric_view(ax)
 

@@ -1,104 +1,109 @@
 """
-拟真城市道路环境 —— 小车在城市里只能沿道路行驶，学习到达目标的最优路径。
+拟真城市道路环境 —— 不规则街道交错布局。
 
-城市是 x-z 平面上的道路网格：横向/纵向道路把城市分成街区，街区里是高楼。
-小车是一个玩具小车，只能沿道路格点移动（不能穿楼、不能离开道路），
-目标是到达某个道路格点。
+真实城市特点：
+- 街道不等距、长短不一，街区大小不等（不是规整棋盘）
+- 竖直街道（沿 x）与水平街道（沿 z）交错，形成大小不同的街区
+- 小车只能在街道交叉点之间的道路上行驶，不能穿过街区（楼）
+- 目标随机选一个交叉点，小车要沿道路找到最优路径
 
-- 状态：到目标的单位方向 + 归一化距离 + 归一化当前位置
-- 动作：4 个（上 / 下 / 左 / 右）
-- 奖励：靠近目标 +，到达目标 +20，无效移动(撞边界) -
+状态（5 维）：到目标单位方向(2) + 归一化距离(1) + 归一化位置(2)
+动作（4）：上(沿-z) 下(沿+z) 左(沿-x) 右(沿+x)
+奖励：靠近目标 +1 / 远离 -1 / 撞边界(走不动) -0.5 / 到达目标 +20
 """
 import numpy as np
 
 
 class CarEnv3D:
-    """城市道路网格环境（俯视即道路网，街区是楼）。"""
-
-    def __init__(self, grid: int = 6, spacing: float = 2.0,
-                 max_steps: int = 80, seed: int | None = None):
-        self.grid = grid            # grid × grid 个道路格点
-        self.spacing = spacing      # 相邻格点间距（世界单位）
-        self.max_steps = max_steps  # 每个回合最多走多少步
-        self.n_actions = 4          # 0上 1下 2左 3右
-        if seed is not None:
-            np.random.seed(seed)
-
-        # 楼：每个街区一栋（中心x, 中心z, 长, 宽, 高）
-        self.buildings = self._make_buildings()
+    def __init__(self, max_steps=100):
+        self.max_steps = max_steps
+        # 不规则城市街道位置：竖直街道（沿 x）和水平街道（沿 z）
+        # 间距不等、街区大小不一，交错成真实城市路网
+        self.street_x = np.array([0.0, 1.6, 3.3, 5.0, 6.8, 8.6, 10.0])
+        self.street_z = np.array([0.0, 1.4, 3.1, 4.9, 7.0, 8.8, 10.0])
+        self.nx = len(self.street_x)          # 竖直街道条数
+        self.nz = len(self.street_z)          # 水平街道条数
+        self.n_actions = 4
+        self.steps = 0
+        self.car = (0, 0)                     # 当前交叉点索引 (ix, iz)
+        self.goal = (self.nx - 1, self.nz - 1)
+        self._build_buildings()
         self.reset()
 
-    # ---------------------------------------------------------------
-    # 环境主接口
-    # ---------------------------------------------------------------
-    def reset(self):
-        """小车从 (0,0) 出发，目标随机放在某条道路格点，返回初始状态。"""
-        self.car = (0, 0)
-        self.goal = (np.random.randint(self.grid), np.random.randint(self.grid))
-        while self.goal == self.car:            # 目标不能就是起点
-            self.goal = (np.random.randint(self.grid), np.random.randint(self.grid))
-        self.step_count = 0
-        self._prev_car = self.car
-        return self._state()
-
-    def step(self, action: int):
-        """沿道路移动一格，返回 (新状态, 奖励, 是否结束, 附加信息)。"""
-        i, j = self.car
-        move = {0: (0, -1), 1: (0, 1), 2: (-1, 0), 3: (1, 0)}[action]
-        ni, nj = i + move[0], j + move[1]
-        valid = 0 <= ni < self.grid and 0 <= nj < self.grid
-        if valid:
-            self.car = (ni, nj)
-        self.step_count += 1
-
-        dist = self._dist(self.car, self.goal)
-        prev = self._dist(self._prev_car, self.goal)
-        reward = float(prev - dist)     # 靠近目标得 +1，远离得 -1
-        done = False
-        if not valid:
-            reward -= 0.5               # 撞到道路边界（无效移动）惩罚
-        if self.car == self.goal:       # 到达目标
-            reward += 20.0
-            done = True
-        elif self.step_count >= self.max_steps:
-            done = True
-
-        self._prev_car = self.car
-        return self._state(), reward, done, {"dist": dist, "car": self.car}
+    # ---------------- 坐标换算 ----------------
+    def _world(self, cell):
+        """交叉点索引 -> 世界坐标 (x, z)。"""
+        ix, iz = cell
+        return float(self.street_x[ix]), float(self.street_z[iz])
 
     def car_world(self):
-        """小车当前格点对应的世界坐标 (x, z)。"""
-        return self.car[0] * self.spacing, self.car[1] * self.spacing
+        return self._world(self.car)
 
     def goal_world(self):
-        """目标格点对应的世界坐标 (x, z)。"""
-        return self.goal[0] * self.spacing, self.goal[1] * self.spacing
+        return self._world(self.goal)
 
-    # ---------------------------------------------------------------
-    # 内部实现
-    # ---------------------------------------------------------------
-    def _make_buildings(self):
-        """在每个街区内生成一栋随机高度的楼。"""
-        buildings = []
-        for i in range(self.grid - 1):
-            for j in range(self.grid - 1):
-                cx = (i + 0.5) * self.spacing
-                cz = (j + 0.5) * self.spacing
-                height = float(np.random.uniform(2.0, 4.5))
-                size = self.spacing * 0.7       # 楼几乎占满街区，留出道路
-                buildings.append((cx, cz, size, size, height))
-        return buildings
+    def _dist(self, a, b):
+        """两个交叉点之间的欧氏距离（统计用）。"""
+        xa, za = self._world(a)
+        xb, zb = self._world(b)
+        return float(np.hypot(xb - xa, zb - za))
 
-    @staticmethod
-    def _dist(a, b):
-        """曼哈顿距离（贴合道路网格）。"""
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+    # ---------------- 建筑（每个街区一栋楼，大小随街区）----------------
+    def _build_buildings(self):
+        self.buildings = []
+        for i in range(self.nx - 1):
+            for j in range(self.nz - 1):
+                x0, x1 = self.street_x[i], self.street_x[i + 1]
+                z0, z1 = self.street_z[j], self.street_z[j + 1]
+                cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
+                sx = (x1 - x0) * 0.72          # 楼占街区约 72%，留出道路
+                sz = (z1 - z0) * 0.72
+                h = np.random.uniform(1.2, 3.4)  # 楼高不一
+                self.buildings.append((cx, cz, sx, sz, h))
 
-    def _state(self) -> np.ndarray:
-        """状态：到目标方向(2) + 归一化距离(1) + 归一化位置(2)。"""
-        dg = np.array(self.goal, dtype=float) - np.array(self.car, dtype=float)
-        norm = np.linalg.norm(dg) + 1e-6
-        direction = dg / norm
-        dist = self._dist(self.car, self.goal) / (2.0 * (self.grid - 1))
-        pos = np.array(self.car, dtype=float) / (self.grid - 1)
-        return np.concatenate([direction, [dist], pos])
+    # ---------------- 环境接口 ----------------
+    def _state(self):
+        cx, cz = self.car_world()
+        gx, gz = self.goal_world()
+        dx, dz = gx - cx, gz - cz
+        dist = np.hypot(dx, dz)
+        unit = np.array([dx, dz]) / max(dist, 1e-6)
+        return np.concatenate([unit, [dist / 10.0, cx / 10.0, cz / 10.0]])
+
+    def reset(self):
+        self.car = (0, 0)
+        choices = [(i, j) for i in range(self.nx)
+                   for j in range(self.nz) if (i, j) != (0, 0)]
+        self.goal = choices[np.random.randint(len(choices))]
+        self.steps = 0
+        return self._state()
+
+    def step(self, action):
+        self.steps += 1
+        ix, iz = self.car
+        old = self.car
+        moved = True
+        if action == 0 and iz > 0:
+            iz -= 1
+        elif action == 1 and iz < self.nz - 1:
+            iz += 1
+        elif action == 2 and ix > 0:
+            ix -= 1
+        elif action == 3 and ix < self.nx - 1:
+            ix += 1
+        else:
+            moved = False
+        self.car = (ix, iz)
+
+        d0 = self._dist(old, self.goal)
+        d1 = self._dist(self.car, self.goal)
+        if self.car == self.goal:
+            reward, done = 20.0, True
+        elif not moved:
+            reward, done = -0.5, False
+        else:
+            reward = 1.0 if d1 < d0 else -1.0
+            done = False
+        if self.steps >= self.max_steps:
+            done = True
+        return self._state(), reward, done, {"dist": d1}

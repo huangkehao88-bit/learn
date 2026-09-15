@@ -14,21 +14,20 @@ def set_isometric_view(ax, elev=40, azim=-58):
     ax.view_init(elev=elev, azim=azim)
 
 
-def draw_ground(ax, grid, spacing):
-    """画底面（道路）。"""
-    L = (grid - 1) * spacing
-    xx, zz = np.meshgrid([0.0, L], [0.0, L])
+def draw_ground(ax, street_x, street_z):
+    """画底面（道路）。street_x / street_z 为街道位置数组。"""
+    xx, zz = np.meshgrid([0.0, street_x[-1]], [0.0, street_z[-1]])
     yy = np.zeros_like(xx)
     ax.plot_surface(xx, zz, yy, color="#7d7d7d", alpha=0.9)
 
 
-def draw_road_lines(ax, grid, spacing):
-    """画道路中线（白色十字网，贴在地面）。"""
-    L = (grid - 1) * spacing
-    for i in range(grid):
-        p = i * spacing
-        ax.plot([p, p], [0, L], [0, 0], color="white", lw=1.4, alpha=0.85)
-        ax.plot([0, L], [p, p], [0, 0], color="white", lw=1.4, alpha=0.85)
+def draw_road_lines(ax, street_x, street_z):
+    """画道路中线（白色，沿不规则街道，贴在地面）。"""
+    xmax, zmax = street_x[-1], street_z[-1]
+    for p in street_x:
+        ax.plot([p, p], [0, zmax], [0, 0], color="white", lw=1.4, alpha=0.85)
+    for p in street_z:
+        ax.plot([0, xmax], [p, p], [0, 0], color="white", lw=1.4, alpha=0.85)
 
 
 def _box_verts(cx, cz, sx, sz, h, y0):
