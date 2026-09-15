@@ -1,8 +1,8 @@
 """
-推理演示 —— 加载训练好的模型，观察玩具小车在拟真城市里自动找到的最优路径。
+推理演示 —— 俯视城市地图，观察玩具小车自动找到的最优路径。
 
-小车从起点沿道路行驶，自动绕开高楼街区，到达目标（金色点）。
-左侧 3D 城市完整展示小车走的路径，右侧显示到目标的距离下降曲线。
+小车从起点沿道路行驶，自动绕开高楼街区到达目标（金色点）。
+左侧俯视城市清晰展示小车走的路径（绿色），右侧显示到目标的距离下降曲线。
 
 用法：
     python predict.py                  # 加载 model.pkl 观察城市路径
@@ -18,7 +18,7 @@ import numpy as np
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
-from city_vis import ToyCar, draw_buildings, draw_ground, draw_road_lines
+from city_vis import ToyCar2D, draw_buildings, draw_map
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
@@ -39,32 +39,28 @@ def main():
     agent.epsilon = 0.0
     print(f"已加载模型 {args.model}（学习步数 {agent.learn_steps}）")
 
-    # ---------------- 画布 ----------------
+    # ---------------- 画布（俯视）----------------
     plt.ion()
-    fig = plt.figure(figsize=(13, 7))
-    ax3d = fig.add_subplot(121, projection="3d")
+    fig = plt.figure(figsize=(12, 6))
+    ax = fig.add_subplot(121)
     ax2d = fig.add_subplot(122)
 
-    L = (env.grid - 1) * env.spacing
-    ax3d.set_xlim(-1, L + 1); ax3d.set_ylim(-1, L + 1); ax3d.set_zlim(0, 6)
-    ax3d.set_xlabel("X"); ax3d.set_ylabel("Z"); ax3d.set_zlabel("Y")
-    ax3d.set_title("拟真城市 · 小车自动寻路到目标")
-
-    draw_ground(ax3d, env.grid, env.spacing)
-    draw_road_lines(ax3d, env.grid, env.spacing)
-    draw_buildings(ax3d, env.buildings)
-
-    goal_pt, = ax3d.plot([], [], [], "yo", markersize=11, label="目标")
-    trail, = ax3d.plot([], [], [], "g-", alpha=0.8, lw=2.2, label="小车路径")
-    car = ToyCar(ax3d, 0, 0, 0)
-    ax3d.legend(loc="upper left")
+    ax.set_xlabel("X"); ax.set_ylabel("Z")
+    ax.set_title("俯视城市 · 小车自动寻路到目标")
+    draw_map(ax, env.grid, env.spacing)
+    draw_buildings(ax, env.buildings)
+    goal_pt, = ax.plot([], [], "o", color="gold", ms=12, mec="k",
+                       mew=1.2, zorder=4, label="目标")
+    trail, = ax.plot([], [], "-", color="#2ecc40", lw=2.4, zorder=3, label="小车路径")
+    car = ToyCar2D(ax, 0, 0, 0)
+    ax.legend(loc="upper left")
 
     ax2d.set_title("每个演示回合 · 小车到目标的距离")
     ax2d.set_xlabel("步数"); ax2d.set_ylabel("到目标距离")
     ax2d.grid(True, alpha=0.4)
 
     # ---------------- 推理循环（观察路径）----------------
-    all_distances, last_dists, path_cells, episode_goals = [], [], [], []
+    all_distances, path_cells, episode_goals = [], [], []
 
     for ep in range(1, args.episodes + 1):
         state = env.reset()
@@ -85,32 +81,30 @@ def main():
 
             if not args.no_render:
                 gx, gz = env.goal_world()
-                goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.6])
+                goal_pt.set_data([gx], [gz])
                 tw = np.array(traj_world)
                 trail.set_data(tw[:, 0], tw[:, 1])
-                trail.set_3d_properties(np.full(len(tw), 0.4))
                 if len(tw) >= 2:
                     dx, dz = tw[-1] - tw[-2]
-                    car.place(*env.car_world(), np.arctan2(-dz, dx))
+                    car.place(*env.car_world(), np.arctan2(dz, dx))
                 fig.canvas.draw_idle()
                 fig.canvas.flush_events()
-                plt.pause(0.3)
+                plt.pause(0.35)
 
         all_distances.append(dists)
-        last_dists.append(dists[-1])
         path_cells.append(path)
-        steps = [f"{c[0]},{c[1]}" for c in path]
+        steps = " → ".join(f"{c[0]},{c[1]}" for c in path)
         print(f"回合 {ep}: {'到达目标' if reached else '未到达'} | "
-              f"用时 {len(path)-1} 步 | 路径 {steps}")
+              f"用时 {len(path) - 1} 步 | 路径 {steps}")
 
-    # ---------------- 收尾：画路径 + 距离曲线 ----------------
+    # ---------------- 收尾：画最后一个回合路径 + 距离曲线 ----------------
     gx, gz = env.goal_world()
-    goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.6])
+    goal_pt.set_data([gx], [gz])
     tw = np.array(traj_world)
-    trail.set_data(tw[:, 0], tw[:, 1]); trail.set_3d_properties(np.full(len(tw), 0.4))
+    trail.set_data(tw[:, 0], tw[:, 1])
     if len(tw) >= 2:
         dx, dz = tw[-1] - tw[-2]
-        car.place(*env.car_world(), np.arctan2(-dz, dx))
+        car.place(*env.car_world(), np.arctan2(dz, dx))
 
     for dists in all_distances:
         ax2d.plot(list(range(len(dists))), dists, alpha=0.7, lw=1.5)

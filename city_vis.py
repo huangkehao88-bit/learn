@@ -1,95 +1,63 @@
 """
-城市 3D 可视化辅助 —— 把环境画成拟真的城市。
+城市俯视地图可视化 —— 从正上方俯瞰城市，像卫星地图一样清晰。
 
-包含：
-- 画地面（道路）
-- 画高楼（街区）
-- 画玩具小车（车身 + 车顶 + 四个轮子 + 车头方向），可实时移动
+- 深灰底色 = 道路，白色网格线 = 道路中线
+- 棕色方块 = 高楼街区
+- 俯视玩具小车（车身 + 车头 + 车窗），可沿道路移动并转向
 """
 import numpy as np
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import matplotlib.patches as mpatches
 
 
-def draw_ground(ax, grid, spacing, y=0.0):
-    """画浅灰色的城市地面。"""
+def draw_map(ax, grid, spacing):
+    """画俯视城市：深灰道路底色 + 白色道路中线。"""
     L = (grid - 1) * spacing
-    xx, zz = np.meshgrid([0.0, L], [0.0, L])
-    yy = np.zeros_like(xx) + y
-    ax.plot_surface(xx, zz, yy, color="#cfcfcf", alpha=0.55)
-
-
-def draw_road_lines(ax, grid, spacing, y=0.0):
-    """画道路中线（白色网格线），体现道路网。"""
-    L = (grid - 1) * spacing
-    for i in range(grid):
+    ax.set_xlim(-1, L + 1)
+    ax.set_ylim(-1, L + 1)
+    ax.set_aspect("equal")
+    ax.set_facecolor("#7d7d7d")                 # 道路底色
+    for i in range(grid):                       # 道路中线（白色十字网）
         p = i * spacing
-        ax.plot([p, p], [0, L], [y, y], color="white", lw=1.0, alpha=0.9)
-        ax.plot([0, L], [p, p], [y, y], color="white", lw=1.0, alpha=0.9)
-
-
-def _box_verts(cx, cz, sx, sz, h, y0):
-    """返回一个长方体（中心 cx,cz，尺寸 sx×sz，高 h，底 y0）的 6 个面顶点。"""
-    x0, x1 = cx - sx / 2, cx + sx / 2
-    z0, z1 = cz - sz / 2, cz + sz / 2
-    y1 = y0 + h
-    return [
-        [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)],   # 底
-        [(x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1)],   # 顶
-        [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)],   # 前
-        [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)],   # 后
-        [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)],   # 左
-        [(x1, y0, z0), (x1, y0, z1), (x1, y1, z1), (x1, y1, z0)],   # 右
-    ]
+        ax.plot([p, p], [-1, L + 1], color="white", lw=1.6, alpha=0.85)
+        ax.plot([-1, L + 1], [p, p], color="white", lw=1.6, alpha=0.85)
 
 
 def draw_buildings(ax, buildings):
-    """画出所有高楼（棕色，模拟城市街区）。"""
-    faces, colors = [], []
+    """在街区内画楼（俯视方块，棕色）。"""
     for cx, cz, sx, sz, h in buildings:
-        faces += _box_verts(cx, cz, sx, sz, h, 0.0)
-        colors += ["#a8703a"] * 6
-    pc = Poly3DCollection(faces, facecolors=colors, edgecolor="#6b4a2a",
-                          linewidths=0.2, alpha=0.92)
-    ax.add_collection3d(pc)
+        rect = mpatches.Rectangle((cx - sx / 2, cz - sz / 2), sx, sz,
+                                  facecolor="#a8703a", edgecolor="#6b4a2a",
+                                  linewidth=0.8, zorder=2)
+        ax.add_patch(rect)
 
 
-class ToyCar:
-    """玩具小车：车身 + 车顶 + 车头 + 四个轮子，可沿道路移动并转向。"""
+class ToyCar2D:
+    """俯视玩具小车：车身 + 车头 + 车窗，可整体旋转移动。"""
 
-    def __init__(self, ax, x, z, yaw, color="dodgerblue"):
-        self.ax = ax
-        self.color = color
-        # 各部件： (局部cx, 局部cz, 长sx, 宽sz, 高h, 底y0, 颜色)
-        self.parts = [
-            (0.0, 0.0, 0.9, 0.5, 0.30, 0.08, color),          # 车身
-            (-0.08, 0.0, 0.42, 0.28, 0.16, 0.38, "#3b82d6"), # 车顶(靠后)
-            (0.28, 0.0, 0.18, 0.30, 0.12, 0.08, "#1c4f9c"),  # 车头(前方挡风)
-            (-0.32, -0.22, 0.16, 0.10, 0.08, 0.0, "#222"),   # 轮1
-            (0.32, -0.22, 0.16, 0.10, 0.08, 0.0, "#222"),    # 轮2
-            (-0.32, 0.22, 0.16, 0.10, 0.08, 0.0, "#222"),    # 轮3
-            (0.32, 0.22, 0.16, 0.10, 0.08, 0.0, "#222"),     # 轮4
+    # 局部坐标（车头朝 +x）
+    LOCAL_BODY = np.array([(-0.40, -0.25), (0.40, -0.25), (0.40, 0.25), (-0.40, 0.25)])
+    LOCAL_HOOD = np.array([(0.40, -0.16), (0.58, 0.00), (0.40, 0.16)])   # 车头尖
+    LOCAL_WINDOW = np.array([(-0.04, -0.18), (0.20, -0.18), (0.20, 0.18), (-0.04, 0.18)])
+
+    def __init__(self, ax, x, z, yaw):
+        specs = [
+            (self.LOCAL_BODY, "#1f6fd6", "#0d2f52", 1.2, 5),
+            (self.LOCAL_HOOD, "#2b6cb0", "#0d2f52", 1.0, 6),
+            (self.LOCAL_WINDOW, "#b8dcff", None, 0.0, 6),
         ]
-        self._pc = Poly3DCollection([], edgecolor="k", linewidths=0.2)
-        ax.add_collection3d(self._pc)
+        self.polys = []
+        for local, fc, ec, lw, zorder in specs:
+            p = mpatches.Polygon(local.copy(), closed=True, facecolor=fc,
+                                 edgecolor=ec, lw=lw, zorder=zorder)
+            ax.add_patch(p)
+            self.polys.append(p)
         self.place(x, z, yaw)
 
-    def _local_faces(self):
-        faces, colors = [], []
-        for cx, cz, sx, sz, h, y0, c in self.parts:
-            faces += _box_verts(cx, cz, sx, sz, h, y0)
-            colors += [c] * 6
-        return faces, colors
-
     def place(self, x, z, yaw):
-        """把小车放到世界坐标 (x, z)，朝向 yaw（绕 y 轴旋转，0=朝 +x）。"""
-        local_faces, colors = self._local_faces()
-        world_faces = []
-        for face in local_faces:
-            wf = []
-            for (lx, ly, lz) in face:
-                wx = x + lx * np.cos(yaw) + lz * np.sin(yaw)
-                wz = z - lx * np.sin(yaw) + lz * np.cos(yaw)
-                wf.append((wx, ly, wz))
-            world_faces.append(wf)
-        self._pc.set_verts(world_faces)
-        self._pc.set_facecolors(colors)
+        """移动到世界坐标 (x, z)，车头朝向 yaw（弧度）。"""
+        c, s = np.cos(yaw), np.sin(yaw)
+        for poly, local in zip(self.polys,
+                               [self.LOCAL_BODY, self.LOCAL_HOOD, self.LOCAL_WINDOW]):
+            wx = local[:, 0] * c - local[:, 1] * s + x
+            wz = local[:, 0] * s + local[:, 1] * c + z
+            poly.set_xy(np.stack([wx, wz], axis=1))

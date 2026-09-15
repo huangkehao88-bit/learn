@@ -1,14 +1,14 @@
 """
-训练主程序 —— 拟真城市 DQN（Double DQN）城市导航学习。
+训练主程序 —— 拟真城市 Double DQN 城市导航学习（俯视地图）。
 
-运行后弹出实时 3D 城市界面：
-- 左：拟真城市（灰色道路 + 白色路中线 + 高楼街区 + 玩具小车沿道路行驶 + 绿色路径）
-- 右：学习曲线（每个回合累计奖励，逐渐爬升）
+运行后弹出实时俯视城市地图：
+- 左：俯视城市（深灰道路 + 白色路中线 + 棕色高楼 + 蓝色玩具小车沿路行驶 + 绿色路径 + 黄色目标）
+- 右：学习曲线（每个回合累计奖励逐渐爬升）
 
-小车必须沿道路格点行驶，不能穿楼，DQN 学会找到到达目标的最优路径。
+小车必须沿道路格点行驶，不能穿楼，Double DQN 学会找到到达目标的最优路径。
 
 用法：
-    python train.py                      # 训练 + 实时 3D 城市窗口
+    python train.py                      # 训练 + 实时俯视地图窗口
     python train.py --episodes 400       # 只训练 400 回合
     python train.py --no-render          # 快速训练并保存结果图和模型
 """
@@ -21,7 +21,7 @@ import numpy as np
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
-from city_vis import ToyCar, draw_buildings, draw_ground, draw_road_lines
+from city_vis import ToyCar2D, draw_buildings, draw_map
 from dqn_agent import DQNAgent
 from environment import CarEnv3D
 
@@ -45,27 +45,22 @@ def main():
     env = CarEnv3D()
     agent = DQNAgent(state_dim=env._state().shape[0], n_actions=env.n_actions)
 
-    # ---------------- 画布 ----------------
+    # ---------------- 画布（俯视）----------------
     plt.ion()
-    fig = plt.figure(figsize=(13, 7))
-    ax3d = fig.add_subplot(121, projection="3d")
+    fig = plt.figure(figsize=(12, 6))
+    ax = fig.add_subplot(121)
     ax2d = fig.add_subplot(122)
 
-    L = (env.grid - 1) * env.spacing
-    ax3d.set_xlim(-1, L + 1); ax3d.set_ylim(-1, L + 1); ax3d.set_zlim(0, 6)
-    ax3d.set_xlabel("X"); ax3d.set_ylabel("Z"); ax3d.set_zlabel("Y")
-    ax3d.set_title("拟真城市 · DQN 学习城市导航")
-
-    # 静态城市：地面 + 道路 + 高楼
-    draw_ground(ax3d, env.grid, env.spacing)
-    draw_road_lines(ax3d, env.grid, env.spacing)
-    draw_buildings(ax3d, env.buildings)
-
-    # 目标点（金色）、路径、玩具小车
-    goal_pt, = ax3d.plot([], [], [], "yo", markersize=11, label="目标")
-    trail, = ax3d.plot([], [], [], "g-", alpha=0.8, lw=2.2, label="小车路径")
-    car = ToyCar(ax3d, 0, 0, 0)
-    ax3d.legend(loc="upper left")
+    # 左侧俯视城市
+    ax.set_xlabel("X"); ax.set_ylabel("Z")
+    ax.set_title("俯视城市 · DQN 学习城市导航")
+    draw_map(ax, env.grid, env.spacing)
+    draw_buildings(ax, env.buildings)
+    goal_pt, = ax.plot([], [], "o", color="gold", ms=12, mec="k",
+                       mew=1.2, zorder=4, label="目标")
+    trail, = ax.plot([], [], "-", color="#2ecc40", lw=2.4, zorder=3, label="小车路径")
+    car = ToyCar2D(ax, 0, 0, 0)
+    ax.legend(loc="upper left")
 
     # 右侧学习曲线
     ax2d.set_title("每个回合累计奖励（学习曲线）")
@@ -101,25 +96,19 @@ def main():
         avg50 = float(np.mean(episode_rewards[-50:]))
 
         if not args.no_render and (ep % args.render_every == 0 or ep == 1):
-            # 目标 + 路径
             gx, gz = env.goal_world()
             goal_pt.set_data([gx], [gz])
-            goal_pt.set_3d_properties([0.6])
 
             tw = np.array(traj_world)
             trail.set_data(tw[:, 0], tw[:, 1])
-            trail.set_3d_properties(np.full(len(tw), 0.4))
 
-            # 小车朝向最后移动方向
             if len(tw) >= 2:
                 dx, dz = tw[-1] - tw[-2]
-                yaw = np.arctan2(-dz, dx)
+                yaw = np.arctan2(dz, dx)
             else:
                 yaw = 0.0
-            cx, cz = env.car_world()
-            car.place(cx, cz, yaw)
+            car.place(*env.car_world(), yaw)
 
-            # 学习曲线
             xs = list(range(1, len(episode_rewards) + 1))
             line_reward.set_data(xs, episode_rewards)
             if len(episode_rewards) >= 50:
@@ -139,13 +128,12 @@ def main():
 
     # ---------------- 收尾：补画最后一个回合 + 完整曲线 ----------------
     gx, gz = env.goal_world()
-    goal_pt.set_data([gx], [gz]); goal_pt.set_3d_properties([0.6])
+    goal_pt.set_data([gx], [gz])
     tw = np.array(traj_world)
     trail.set_data(tw[:, 0], tw[:, 1])
-    trail.set_3d_properties(np.full(len(tw), 0.4))
     if len(tw) >= 2:
         dx, dz = tw[-1] - tw[-2]
-        car.place(*env.car_world(), np.arctan2(-dz, dx))
+        car.place(*env.car_world(), np.arctan2(dz, dx))
     else:
         car.place(*env.car_world(), 0.0)
 
