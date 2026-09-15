@@ -116,13 +116,17 @@ def main():
 
             if len(tw) >= 2:
                 dx, dz = tw[-1] - tw[-2]
-                yaw = np.arctan2(dz, dx)
+                yaw = np.arctan2(-dz, dx)
             else:
                 yaw = 0.0
             car.place(*env.car_world(), yaw)
             update_signals(signal_artists, env)
             for k, npc in enumerate(env.npc_cars):
-                npc_cars[k].place(*env._world(npc["pos"]), 0.0)
+                route = npc["route"]; idx = npc["idx"]
+                prev = route[(idx - 1) % len(route)]
+                cur = npc["pos"]
+                npc_cars[k].place(*env._world(cur),
+                                  np.arctan2(-(cur[1] - prev[1]), cur[0] - prev[0]))
 
             xs = list(range(1, len(episode_rewards) + 1))
             line_reward.set_data(xs, episode_rewards)
@@ -149,7 +153,7 @@ def main():
     trail.set_3d_properties(np.full(len(tw), 0.12))
     if len(tw) >= 2:
         dx, dz = tw[-1] - tw[-2]
-        car.place(*env.car_world(), np.arctan2(dz, dx))
+        car.place(*env.car_world(), np.arctan2(-dz, dx))
     else:
         car.place(*env.car_world(), 0.0)
 
