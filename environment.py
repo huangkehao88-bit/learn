@@ -27,8 +27,8 @@ class CarEnv3D:
         self.node_xy = np.zeros((grid, grid, 2))
         for i in range(grid):
             for j in range(grid):
-                ox = rng.uniform(-0.45, 0.45) * spacing
-                oz = rng.uniform(-0.45, 0.45) * spacing
+                ox = rng.uniform(-0.15, 0.15) * spacing
+                oz = rng.uniform(-0.15, 0.15) * spacing
                 self.node_xy[i, j] = [i * spacing + ox, j * spacing + oz]
         self.road_edges = []
         for i in range(grid):
